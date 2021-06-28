@@ -13,8 +13,7 @@
 //! The Rust book has example code that does exactly this:
 //! https://doc.rust-lang.org/book/ch20-03-graceful-shutdown-and-cleanup.html
 
-use num_cpus;
-use std::sync::{Arc, mpsc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
@@ -28,12 +27,12 @@ struct Job {
 struct Worker {}
 
 impl Worker {
-    pub fn new(id: usize, job_assignment_rx: Arc<Mutex<mpsc::Receiver<Option<Job>>>>,
-        result_tx: mpsc::Sender<String>) -> Self
-    {
+    pub fn new(
+        id: usize,
+        job_assignment_rx: Arc<Mutex<mpsc::Receiver<Option<Job>>>>,
+        result_tx: mpsc::Sender<String>,
+    ) -> Self {
         println!("Creating new worker");
-
-        let new_worker = Self {};
 
         let _ = Some(thread::spawn(move || {
             println!("Worker {} starting", id);
@@ -42,12 +41,13 @@ impl Worker {
                 let job = job_assignment_rx.lock().unwrap().recv().unwrap();
 
                 match job {
-                    Some(data) => {
-                        println!("Worker {} received new job containing data: {:?}", id, data);
+                    Some(j) => {
+                        println!("Worker {} received new job containing data: '{}'", id, j.data);
                         thread::sleep(Duration::from_millis(100));
-                        result_tx.send(format!("Worker {} completed job with data {:?}", id, data))
-                            .expect(&format!("Worker {} unable to send results", id));
-                        }
+                        result_tx
+                            .send(format!("Worker {} completed job with data '{}'", id, j.data))
+                            .unwrap_or_else(|_| panic!("Worker {} unable to send results", id));
+                    }
                     None => {
                         break;
                     }
@@ -55,10 +55,9 @@ impl Worker {
             }
         }));
 
-        new_worker
+        Self {}
     }
 }
-
 
 fn main() {
     // Benchmark begin
@@ -73,15 +72,27 @@ fn main() {
 
     let arc_work_assignment_rx = Arc::new(Mutex::new(work_assignment_rx));
 
+    // Create one worker for each physical CPU core
     for i in 0..thread_count {
-        workers.push(Worker::new(i, arc_work_assignment_rx.clone(), results_channel_tx.clone()));
+        workers.push(Worker::new(
+            i,
+            arc_work_assignment_rx.clone(),
+            results_channel_tx.clone(),
+        ));
     }
 
+    // Send all jobs via a channel. Each job will be retrieved by the next free worker.
     for i in 0..JOB_COUNT {
-        let new_job = Job { data: format!("Job #{} data", i) };
-        work_assignment_tx.send(Some(new_job)).expect("Failed to send");
+        let new_job = Job {
+            data: format!("Job #{} data", i),
+        };
+        work_assignment_tx
+            .send(Some(new_job))
+            .expect("Failed to send");
     }
 
+    // Collect the results from all the jobs. Although this code sends and retrieves jobs in
+    // separate loops, this can be interleaved.
     for _ in 0..JOB_COUNT {
         let r = results_channel_rx.recv().expect("Failed to receive");
         println!("Received completed job data: {}", r);
@@ -95,10 +106,16 @@ fn main() {
     // Benchmark end
     match benchmark_start.elapsed() {
         Ok(elapsed) => {
-            println!("Benchmark: run time was {} microseconds", elapsed.as_millis());
+            println!(
+                "Benchmark: run time was {} milliseconds",
+                elapsed.as_millis()
+            );
         }
         Err(e) => {
-            println!("Benchmark: run time cannot be calculated due to error: {:?}", e);
+            println!(
+                "Benchmark: run time cannot be calculated due to error: {:?}",
+                e
+            );
         }
     }
 }
