@@ -22,4 +22,6 @@ cargo run
 
 | Directory Name | Snippet Description |
 | --- | --- |
+| generic-struct-functions | Demonstrates the ability of a generic struct to have different implementations of a function with the same name but for different types. |
 | thread-worker | A simple, multi-threaded worker. [Chapter 20.3 of The Rust Programming Language](https://doc.rust-lang.org/book/ch20-03-graceful-shutdown-and-cleanup.html) has a more generic example along similar lines. |
+
